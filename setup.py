@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 import openmines
 
-# 读取requirements.txt文件中的内容
+# Load the dependencies listed in requirements.txt
 with open('openmines/requirements.txt') as f:
     required = f.read().splitlines()
 

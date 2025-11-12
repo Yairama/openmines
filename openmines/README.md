@@ -30,15 +30,15 @@ class NaiveDispatcher(BaseDispatcher):
         self.name = "NaiveDispatcher"  # IMPORTANT: set the name of the algorithm; this will be used in the config file
 
     def give_init_order(self, truck: "Truck", mine: "Mine") -> int:
-        # 从第一个load site开始
+    # Always assign the first load site.
         return 0
 
     def give_haul_order(self, truck: "Truck", mine: "Mine") -> int:
-        # 从第一个load site开始
+    # Always assign the first load site.
         return 0
 
     def give_back_order(self, truck: "Truck", mine: "Mine") -> int:
-        # 从第一个dump site开始
+    # Always return to the first dump site.
         return 0
 
 

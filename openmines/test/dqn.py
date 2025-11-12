@@ -14,84 +14,84 @@ from datetime import datetime
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
-# 禁用警告以加快执行速度
+# Disable warnings to speed up execution
 import warnings
 warnings.filterwarnings('ignore')
 
 from torch.utils.tensorboard import SummaryWriter
 from openmines.src.utils.rl_env import MineEnv
 
-# ===== 超参数定义 =====
-GAMMA = 0.999  # 折扣因子
-TIME_SCALE = 1  # 时间衰减系数 X
-LEARNING_RATE = 1e-3  # 学习率
-BATCH_SIZE = 256  # 批次大小
-MAX_STEPS = 1000  # 每个回合最大步数
-NUM_EPISODES = 20000  # 总回合数
-MEMORY_SIZE = 512*10  # 经验回放缓冲区大小
-TARGET_UPDATE = 5  # 目标网络更新频率
-EPS_START = 0.19  # 初始探索率
-EPS_END = 0.01  # 最终探索率
-EPS_DECAY = 1000*100  # 探索率衰减速度
-TIME_ATTENTION = False  # 是否使用时间注意力
+# ===== Hyperparameter Definitions =====
+GAMMA = 0.999  # Discount factor
+TIME_SCALE = 1  # Time decay coefficient X
+LEARNING_RATE = 1e-3  # Learning rate
+BATCH_SIZE = 256  # Batch size
+MAX_STEPS = 1000  # Maximum steps per episode
+NUM_EPISODES = 20000  # Total number of episodes
+MEMORY_SIZE = 512*10  # Replay buffer capacity
+TARGET_UPDATE = 5  # Target network update frequency
+EPS_START = 0.19  # Initial exploration rate
+EPS_END = 0.01  # Final exploration rate
+EPS_DECAY = 1000*100  # Exploration decay speed
+TIME_ATTENTION = False  # Enable time-attention mechanism
 MODEL_NAME = "DuelingDQN" # "DQN" or "DuelingDQN"
 
 
 def generate_run_id():
-    """生成唯一的运行ID"""
+    """Generate a unique run ID."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     random_string = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
     return f"{timestamp}_{random_string}"
 
 def generate_run_color():
-    """生成随机颜色"""
+    """Generate a random color."""
     return "#{:06x}".format(random.randint(0, 0xFFFFFF))
 
 
 class DQN(nn.Module):
     def __init__(self, state_dim, action_dims):
         super(DQN, self).__init__()
-        self.input_dim = state_dim + 1  # 状态维度 + 时间特征
+        self.input_dim = state_dim + 1  # State dimension plus time feature
 
-        # 全连接层
+        # Fully connected layers
         self.fc1 = nn.Linear(self.input_dim, 256)
-        self.ln1 = nn.LayerNorm(256)  # 添加LayerNorm
+        self.ln1 = nn.LayerNorm(256)  # Apply LayerNorm
 
         self.fc2 = nn.Linear(256, 256)
-        self.ln2 = nn.LayerNorm(256)  # 添加LayerNorm
+        self.ln2 = nn.LayerNorm(256)  # Apply LayerNorm
 
         self.fc3 = nn.Linear(256, 128)
-        self.ln3 = nn.LayerNorm(128)  # 添加LayerNorm
+        self.ln3 = nn.LayerNorm(128)  # Apply LayerNorm
 
-        # 输出层
+        # Output heads
         self.output_layers = nn.ModuleList([
             nn.Sequential(
                 nn.Linear(128, dim),
-                nn.LayerNorm(dim)  # 为每个输出层添加LayerNorm
+                nn.LayerNorm(dim)  # Apply LayerNorm to each output head
             ) for dim in action_dims
         ])
 
-        # 时间注意力
+        # Time-attention module
         self.time_attention = nn.Sequential(
             nn.Linear(1, 128),
-            nn.LayerNorm(128)  # 为时间注意力添加LayerNorm
+            nn.LayerNorm(128)  # Apply LayerNorm in the time-attention block
         )
 
     def forward(self, state, event_type, time_delta):
-        # 确保time_delta是2维的 [B,1]
+        # Ensure time_delta has shape [B, 1]
         if time_delta.dim() == 1:
             time_delta = time_delta.unsqueeze(-1)
         elif time_delta.dim() == 3:
-            time_delta = time_delta.squeeze(1)  # 从[B,1,1]变为[B,1]
+            time_delta = time_delta.squeeze(1)  # Squeeze from [B,1,1] to [B,1]
 
-        # 时间特征处理，确保维度一致
-        time_feature = time_delta  # 已经是[B,1]了
+        # Normalize the time feature so dimensions stay aligned
+        time_feature = time_delta  # Already shaped as [B,1]
 
 
         combined_state = torch.cat([state, time_feature], dim=1)  # [B,state_dim+1]
         time_attention = torch.sigmoid(self.time_attention(time_delta))  # [B,128]
 
-        # 前向传播
+    # Forward pass
         x = self.ln1(torch.relu(self.fc1(combined_state)))
         x = self.ln2(torch.relu(self.fc2(x)))
         x = self.ln3(torch.relu(self.fc3(x)))
@@ -99,7 +99,7 @@ class DQN(nn.Module):
         if TIME_ATTENTION:
             x = x * time_attention
 
-        # 根据batch size选择不同的处理方式
+        # Handle single-sample vs batch processing
         if state.shape[0] == 1:
             q_values = self.output_layers[event_type.item()](x)
         else:
@@ -113,9 +113,9 @@ class DQN(nn.Module):
 class DuelingDQN(nn.Module):
     def __init__(self, state_dim, action_dims):
         super(DuelingDQN, self).__init__()
-        self.input_dim = state_dim + 1  # 状态维度 + 时间特征
+        self.input_dim = state_dim + 1  # State dimension plus time feature
 
-        # 特征提取层
+        # Feature extraction layers
         self.features = nn.Sequential(
             nn.Linear(self.input_dim, 256),
             nn.LayerNorm(256),
@@ -130,59 +130,59 @@ class DuelingDQN(nn.Module):
             nn.ReLU()
         )
 
-        # 时间注意力层
+        # Time-attention layers
         self.time_attention = nn.Sequential(
             nn.Linear(1, 128),
             nn.LayerNorm(128)
         )
 
-        # Value Stream - 评估状态的价值
+        # Value stream - estimates state value
         self.value_stream = nn.Sequential(
             nn.Linear(128, 64),
             nn.LayerNorm(64),
             nn.ReLU(),
-            nn.Linear(64, 1)  # 输出单个状态值
+            nn.Linear(64, 1)  # Output a single state value
         )
 
-        # Advantage Stream - 评估每个动作的优势
+        # Advantage stream - estimates per-action advantage
         self.advantage_streams = nn.ModuleList([
             nn.Sequential(
                 nn.Linear(128, 64),
                 nn.LayerNorm(64),
                 nn.ReLU(),
-                nn.Linear(64, dim)  # 每个事件类型对应的动作维度
+                nn.Linear(64, dim)  # Action dimension aligned to the event type
             ) for dim in action_dims
         ])
 
     def forward(self, state, event_type, time_delta):
-        # 确保time_delta是2维的 [B,1]
+        # Ensure time_delta has shape [B, 1]
         if time_delta.dim() == 1:
             time_delta = time_delta.unsqueeze(-1)
         elif time_delta.dim() == 3:
             time_delta = time_delta.squeeze(1)
 
-        # 时间特征处理
+        # Process time feature
         time_feature = time_delta
         combined_state = torch.cat([state, time_feature], dim=1)
 
-        # 特征提取
+        # Feature extraction
         features = self.features(combined_state)
 
         if TIME_ATTENTION:
             time_attention = torch.sigmoid(self.time_attention(time_delta))
             features = features * time_attention
 
-        # 计算状态值
+        # Compute state value
         values = self.value_stream(features)
 
-        # 根据batch size选择不同的处理方式
+        # Handle single-sample vs batch processing
         if state.shape[0] == 1:
-            # 单个样本处理
+            # Single-sample path
             advantages = self.advantage_streams[event_type.item()](features)
             # Q = V + (A - mean(A))
             q_values = values + (advantages - advantages.mean(dim=1, keepdim=True))
         else:
-            # batch处理
+            # Batch path
             q_values = []
             for i, et in enumerate(event_type):
                 advantages = self.advantage_streams[et.item()](features[i:i + 1])
@@ -199,7 +199,7 @@ class ReplayMemory:
         self.device = device
 
     def push(self, state, event_type, action, reward, next_state, next_event_type, done, time_delta, next_time_delta):
-        # 确保所有输入都是tensor并且在正确的设备上
+        # Ensure all inputs are tensors located on the target device
         state = torch.as_tensor(state, dtype=torch.float32, device=self.device)
         event_type = torch.as_tensor(event_type, dtype=torch.long, device=self.device)
         action = torch.as_tensor(action, dtype=torch.long, device=self.device)
@@ -221,7 +221,7 @@ class ReplayMemory:
 
 
 def preprocess_features(observation):
-    """特征预处理"""
+    """Preprocess raw observation features for the agent."""
     time_delta = float(observation['info']['delta_time'])
     time_now = float(observation['info']['time'])
 
@@ -272,14 +272,14 @@ def preprocess_features(observation):
 
 
 def train_dqn(args):
-    """训练DQN智能体"""
-    # 初始化运行标识
+    """Train the DQN-based agent."""
+    # Initialize run metadata
     run_id = generate_run_id()
     run_color = generate_run_color()
     log_dir = os.path.join("runs", run_id)
     os.makedirs(log_dir, exist_ok=True)
 
-    # 配置参数
+    # Persist key configuration values for reproducibility
     config = {
         "run_id": run_id,
         "run_color": run_color,
@@ -299,7 +299,7 @@ def train_dqn(args):
     with open(os.path.join(log_dir, "config.json"), "w") as f:
         json.dump(config, f, indent=4)
 
-    # 初始化环境和网络
+    # Initialize environment and derive action/state dimensions
     env = MineEnv.make(args.env_config, log=False, ticks=False)
     observation, _ = env.reset(seed=42)
     state, event_type, time_delta, _ = preprocess_features(observation)
@@ -311,9 +311,7 @@ def train_dqn(args):
     ]
     env.close()
 
-
-
-    # 设置设备和网络
+    # Select device and instantiate networks
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if MODEL_NAME == "DQN":
@@ -325,7 +323,7 @@ def train_dqn(args):
     else:
         raise ValueError(f"Unknown model name: {MODEL_NAME}")
 
-    # 加载预训练模型
+    # Load a pretrained model when provided
     if args.pretrained_path:
         print(f"Loading pretrained model from {args.pretrained_path}")
         checkpoint = torch.load(args.pretrained_path)
@@ -337,12 +335,12 @@ def train_dqn(args):
     target_net.eval()
 
     # optimizer = optim.Adam(policy_net.parameters(), lr=LEARNING_RATE)
-    # 使用SGD with momentum
+    # Use SGD with momentum
     optimizer = optim.SGD(
         policy_net.parameters(),
-        lr=LEARNING_RATE,  # SGD通常需要比Adam大的学习率
-        momentum=0.9,  # 动量项
-        weight_decay=1e-4  # L2正则化
+        lr=LEARNING_RATE,  # SGD typically prefers a larger learning rate than Adam
+        momentum=0.9,  # Momentum term
+        weight_decay=1e-4  # L2 regularization
     )
 
     memory = ReplayMemory(MEMORY_SIZE, device)
@@ -362,7 +360,7 @@ def train_dqn(args):
     steps_done = 0
 
     def select_action(state, event_type, time_delta):
-        """选择动作"""
+        """Select an action via an epsilon-greedy policy."""
         nonlocal steps_done
         eps_threshold = EPS_END + (EPS_START - EPS_END) * \
                         np.exp(-1. * steps_done / EPS_DECAY)
@@ -384,7 +382,7 @@ def train_dqn(args):
     total_production = 0
     event_types = ['Init', 'Haul', 'Unhaul']
 
-    # 预分配内存给batch训练
+    # Preallocate tensors for batch training
     batch_state = torch.zeros(BATCH_SIZE, state_dim, device=device)
     batch_event_type = torch.zeros(BATCH_SIZE, dtype=torch.long, device=device)
     batch_action = torch.zeros(BATCH_SIZE, 1, dtype=torch.long, device=device)
@@ -395,7 +393,7 @@ def train_dqn(args):
     batch_time_delta = torch.zeros(BATCH_SIZE, 1, device=device)
     batch_next_time_delta = torch.zeros(BATCH_SIZE, 1, device=device)
 
-    # 预分配状态和动作的内存
+    # Preallocate the current state/action tensors
     current_state = torch.zeros(1, state_dim, device=device)
     current_event_type = torch.zeros(1, dtype=torch.long, device=device)
     current_time_delta = torch.zeros(1, dtype=torch.float, device=device)
@@ -405,7 +403,7 @@ def train_dqn(args):
         observation, _ = env.reset(seed=episode)
         state_np, event_type, time_delta, time_now = preprocess_features(observation)
 
-        # 使用预分配的内存
+    # Populate preallocated tensors with the initial observation
         current_state[0] = torch.tensor(state_np, device=device)
         current_event_type[0] = event_type
         current_time_delta[0] = time_delta
@@ -420,33 +418,32 @@ def train_dqn(args):
         reward_time_dict = defaultdict(int)
 
         for t in range(MAX_STEPS):
-            # 选择动作
-            # 使用预分配的内存选择动作
+            # Select an action
+            # Use the preallocated tensors when choosing actions
             action = select_action(current_state, current_event_type, current_time_delta)
             action_item = action.item()
 
-            # 收集ORDER数据（每5个回合）
+            # Collect order statistics every five episodes
             if episode % 5 == 0:
                 time_key = int(time_now)
                 order_dict[event_type] += 1
-                if event_type == 0:  # Init事件
+                if event_type == 0:  # Init event
                     load_order_dist_dict[action_item] += 1
-                elif event_type == 1:  # Haul事件
+                elif event_type == 1:  # Haul event
                     dump_order_dist_dict[action_item] += 1
-                elif event_type == 2:  # Unhaul事件
+                elif event_type == 2:  # Unhaul event
                     load_order_dist_dict[action_item] += 1
                 else:
                     raise ValueError(f"Unknown event type: {event_type}")
 
-            # 执行动作
+            # Execute the chosen action
             observation, reward, done, truncated, _ = env.step(action_item)
             total_reward += reward
             reward_time_dict[int(time_now)] = reward
 
             reward_tensor = torch.tensor([reward], device=device, dtype=torch.float32)  # adjusted_reward
 
-            # 处理下一个状态
-            # 处理下一个状态，使用预分配的内存
+            # Process the next state using the preallocated tensors
             next_state_np, next_event_type, next_time_delta, next_time_now = preprocess_features(observation)
             with torch.no_grad():
                 next_state = torch.tensor([next_state_np], device=device)
@@ -462,12 +459,12 @@ def train_dqn(args):
             time_now = next_time_now
             step_count += 1
 
-            # 经验回放训练
+            # Replay training step
             if len(memory) >= BATCH_SIZE and t%500 == 0:
                 transitions = memory.sample(BATCH_SIZE)
                 # batch = list(zip(*transitions))
 
-                # 使用预分配的内存填充batch数据
+                # Populate the batch tensors with sampled transitions
                 for i, (s, et, a, r, ns, net, d, td, ntd) in enumerate(transitions):
                     batch_state[i] = s
                     batch_event_type[i] = et
@@ -479,10 +476,10 @@ def train_dqn(args):
                     batch_time_delta[i] = td
                     batch_next_time_delta[i] = ntd
 
-                # 计算current Q values
+                # Compute current Q-values
                 current_q_values = policy_net(batch_state, batch_event_type,
                                               batch_time_delta).gather(1, batch_action)
-                # 计算next state values
+                # Compute next-state values
                 next_state_values = torch.zeros(BATCH_SIZE, device=device)
                 with torch.no_grad():
                     non_final_mask = ~batch_done
@@ -494,15 +491,15 @@ def train_dqn(args):
                         )
                         next_state_values[non_final_mask] = next_q_values.max(1)[0]
 
-                # 计算expected Q values
+                # Compute expected Q-values
                 gamma_t = GAMMA ** batch_next_time_delta.squeeze().float()  # gamma^delta_t. here is S_(t+1) - S_t time delta
                 expected_q_values = (next_state_values * gamma_t) + batch_reward.squeeze()
 
-                # 计算loss并更新
+                # Compute loss and update parameters
                 loss = nn.MSELoss()(current_q_values.squeeze(), expected_q_values)
                 optimizer.zero_grad()
                 loss.backward()
-                nn.utils.clip_grad_norm_(policy_net.parameters(), 1)  # 梯度裁剪
+                nn.utils.clip_grad_norm_(policy_net.parameters(), 1)  # Gradient clipping
                 optimizer.step()
                 writer.add_scalar('Training/Loss', loss.item(), global_step=episode)
                 # Q value stuff
@@ -510,7 +507,7 @@ def train_dqn(args):
                 writer.add_scalar('Training/QMin', current_q_values.min().item(), global_step=episode)
                 writer.add_scalar('Training/QMean', current_q_values.mean().item(), global_step=episode)
 
-            # 更新当前状态
+            # Update the current state tensors
             current_state[0] = torch.tensor(next_state_np, device=device)
             current_event_type[0] = next_event_type
             current_time_delta[0] = next_time_delta
@@ -521,10 +518,10 @@ def train_dqn(args):
 
         # 0. total length
         writer.add_scalar('Episode/Length', sum(order_dict), global_step=episode)
-        # 每5个回合创建比较图表
+        # Every five episodes, log comparison charts
         if episode % 5 == 0:
-            # 1. 记录TOTAL ORDER分布 ON TYPE
-            # 如果你想看到总的订单比例分布
+            # 1. Track the total order distribution per event type
+            # Helpful for understanding the overall allocation mix
             writer.add_scalars(
                 'Orders/Distribution',
                 {
@@ -535,52 +532,52 @@ def train_dqn(args):
                 global_step=episode
             )
 
-            # 2. 记录奖励分布
-            # 对每个时间点分别记录奖励
+            # 2. Record the reward distribution
+            # Log the reward at every timestep
             for t, reward in reward_time_dict.items():
                 writer.add_scalar(
-                    f'Rewards/Episode_{episode}',  # 每个episode一条曲线
-                    reward,  # 该时间点的奖励值
-                    global_step=t  # x轴是时间步
+                    f'Rewards/Episode_{episode}',  # One curve per episode
+                    reward,  # Reward value at the timestep
+                    global_step=t  # Use timestep as the x-axis
                 )
 
-            # 3. 记录站点分布
-            # 装载点分布
+            # 3. Track how orders distribute across sites
+            # Load-site distribution
             writer.add_histogram(
                 f'ORDER/LoadSite',
                 np.array(load_order_dist_dict),
                 episode
             )
-            # 卸载点分布
+            # Dump-site distribution
             writer.add_histogram(
                 f'ORDER/DumpSite',
                 np.array(dump_order_dist_dict),
                 episode
             )
-            # 对于装载点
+            # Per load site time series
             for site_idx in range(len(load_order_dist_dict)):
                 writer.add_scalar(
-                    f'LoadSite/Site_{site_idx}',  # 每个装载点一条曲线
-                    load_order_dist_dict[site_idx],  # 该装载点在当前episode的订单数
+                    f'LoadSite/Site_{site_idx}',  # One curve per load site
+                    load_order_dist_dict[site_idx],  # Orders served this episode
                     global_step=episode
                 )
 
-            # 也可以用add_scalars将所有装载点放在同一个图中
+            # Plot all load sites together for side-by-side comparison
             writer.add_scalars(
                 'LoadSites/All',
                 {f'Site_{i}': count for i, count in enumerate(load_order_dist_dict)},
                 global_step=episode
             )
 
-            # 对于卸载点
+            # Per dump site time series
             for site_idx in range(len(dump_order_dist_dict)):
                 writer.add_scalar(
-                    f'DumpSite/Site_{site_idx}',  # 每个卸载点一条曲线
-                    dump_order_dist_dict[site_idx],  # 该卸载点在当前episode的订单数
+                    f'DumpSite/Site_{site_idx}',  # One curve per dump site
+                    dump_order_dist_dict[site_idx],  # Orders served this episode
                     global_step=episode
                 )
 
-            # 同样可以用add_scalars将所有卸载点放在同一个图中
+            # Plot all dump sites together in a consolidated chart
             writer.add_scalars(
                 'DumpSites/All',
                 {f'Site_{i}': count for i, count in enumerate(dump_order_dist_dict)},
@@ -630,7 +627,7 @@ def train_dqn(args):
 
 
 def evaluate_model(model, env, num_episodes=10, device="cuda"):
-    """评估训练好的模型"""
+    """Evaluate a trained model."""
     model.eval()
     rewards = []
     productions = []
@@ -696,28 +693,28 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Time-Aware DQN Mining Environment")
     parser.add_argument("--env_config", type=str,
                         default="../../openmines/src/conf/north_pit_mine.json",
-                        help="环境配置文件路径")
+                        help="Path to the environment configuration file")
     parser.add_argument("--num_episodes", type=int, default=NUM_EPISODES,
-                        help="训练回合数")
+                        help="Number of training episodes")
     parser.add_argument("--max_steps", type=int, default=MAX_STEPS,
-                        help="每个回合的最大步数")
+                        help="Maximum steps per episode")
     parser.add_argument("--eval", action="store_true",
-                        help="运行评估模式")
+                        help="Run evaluation mode")
     parser.add_argument("--model_path", type=str,
-                        help="用于评估的模型路径")
+                        help="Model checkpoint to evaluate")
     parser.add_argument("--eval_episodes", type=int, default=10,
-                        help="评估回合数")
+                        help="Number of evaluation episodes")
     parser.add_argument("--pretrained_path", type=str, default=None,
-                        help="预训练模型路径")
+                        help="Path to a pretrained model")
 
     args = parser.parse_args()
 
     if args.eval and args.model_path:
-        # 评估模式
+        # Evaluation mode
         env = MineEnv.make(args.env_config, log=False, ticks=False)
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # 加载模型
+        # Load model
         checkpoint = torch.load(args.model_path)
         state_dim = checkpoint['config']['state_dim']
         action_dims = checkpoint['config']['action_dims']
@@ -725,7 +722,7 @@ if __name__ == '__main__':
         model = DQN(state_dim, action_dims).to(device)
         model.load_state_dict(checkpoint['policy_net_state_dict'])
 
-        # 运行评估
+        # Run evaluation
         results = evaluate_model(model, env, num_episodes=args.eval_episodes)
 
         print("\nEvaluation Results:")
@@ -734,5 +731,5 @@ if __name__ == '__main__':
 
         env.close()
     else:
-        # 训练模式
+        # Training mode
         train_dqn(args)

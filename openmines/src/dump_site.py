@@ -23,14 +23,13 @@ class Dumper:
         self.res = simpy.Resource(env, capacity=1)
 
     def monitor_status(self, env, monitor_interval=1):
-        """监控卸载位的产量、服务次数等信息
-        """
+        """Track production output and service counts for an individual dump bay."""
         while True:
             self.status[int(env.now)] = {
                 "produced_tons": self.dumper_tons,
                 "service_count": self.service_count,
             }
-            # 等待下一个监控时间点
+            # Wait until the next monitoring sample
             yield env.timeout(monitor_interval)
 
 class DumpSite:
@@ -39,8 +38,8 @@ class DumpSite:
         self.position = position
         self.dumper_list = []
         self.parking_lot = None
-        self.tons = 0  # 卸载点的总吨数 用于统计
-        self.truck_visits = 0  # 卸载点的总车次数 用于统计
+        self.tons = 0  # Aggregate tonnage handled by this dump site
+        self.truck_visits = 0  # Total number of truck visits handled
         self.status = dict()  # the status of shovel
         self.produce_tons = 0  # the produced tons of this dump site
         self.service_count = 0  # the number of shovel-vehicle cycle in this dump site
@@ -49,8 +48,8 @@ class DumpSite:
         self.avg_queue_wait_time = 0  # the average waiting time for coming trucks in queue
         self.dump_site_productivity = 0
         # service_time = min service time
-        self.last_service_time = 0  # 上一次服务Start时间
-        self.last_service_done_time = 0  # 上一次服务End时间
+        self.last_service_time = 0  # Start time of the previous service
+        self.last_service_done_time = 0  # End time of the previous service
 
     def update_service_time(self):
         self.last_service_time = min([dumper.last_service_time for dumper in self.dumper_list])
@@ -62,27 +61,26 @@ class DumpSite:
             dumper.set_env(env)
 
     def monitor_status(self, env, monitor_interval=1):
-        """监控卸载区的产量、服务次数等信息
-        """
+        """Track production and service statistics for the entire dump site."""
         while True:
-            # 获取每个dumper信息并统计
+            # Gather metrics from individual dumpers
             self.produce_tons = sum(dumper.dumper_tons for dumper in self.dumper_list)
             self.service_count = sum(dumper.service_count for dumper in self.dumper_list)
             self.status[int(env.now)] = {
                 "produced_tons": self.produce_tons,
                 "service_count": self.service_count,
             }
-            # 统计卸载区的卸载能力
+            # Estimate the current unloading capacity of the site
             dump_site_productivity = sum(
                 dumper.dumper_tons / dumper.dump_time for dumper in self.dumper_list)
             self.dump_site_productivity = dump_site_productivity
-            # 等待下一个监控时间点
+            # Wait until the next monitoring sample
             yield env.timeout(monitor_interval)
 
     def add_dumper(self, dumper:Dumper):
         dumper_count = len(self.dumper_list)
         dumper.position = tuple(a + b for a, b in zip(self.position, dumper.position_offset*(dumper_count+1)))
-        # 在dumper中添加自己引用
+        # Register this dump site on the dumper instance
         dumper.dump_site = self
         self.dumper_list.append(dumper)
 
@@ -103,14 +101,14 @@ class DumpSite:
         self.parking_lot = ParkingLot(name=name, position=park_position)
 
     def get_available_dumper(self)->Dumper:
-        """
-        这里是一个简单的贪心算法，返回第一个空闲的卸载点
-        TODO：下一个版本，也许可以将铲车暴露出来作为单个卸载区让其决策。目前仅贪心算法。
-        :return:
+        """Return the first free dumper using a greedy heuristic.
+
+        TODO: In future versions we may expose shovel-level decisions; for now we
+        stick to a simple greedy choice.
         """
         for dumper in self.dumper_list:
             if dumper.res.count == 0:
                 return dumper
-        # 如果没有空闲的铲车 则返回最小队列的铲车
+        # Fall back to the dumper with the shortest queue
         min_queue_dumper = min(self.dumper_list, key=lambda dumper: len(dumper.res.queue))
         return min_queue_dumper

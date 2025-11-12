@@ -35,36 +35,36 @@ class BaseDispatcher:
     def _track_calls_and_time_wrapper(self, method, method_type):
         def wrapper(*args, **kwargs):
             # check input
-            # 处理self参数
+            # Handle implicit self parameter
             if not args and not kwargs:
                 raise ValueError(f"{method_type} requires truck and mine arguments")
 
-            # 从位置参数或关键字参数中获取truck和mine
+            # Pull truck and mine from positional or keyword arguments
             truck = None
             mine = None
 
-            # 检查kwargs
+            # Inspect keyword arguments
             if 'truck' in kwargs:
                 truck = kwargs['truck']
             if 'mine' in kwargs:
                 mine = kwargs['mine']
 
-            # 如果没有在kwargs中找到，检查args
+            # Fallback to positional arguments if missing
             if len(args) >= 2:  # self + truck + mine
                 if truck is None:
                     truck = args[0]
                 if mine is None:
                     mine = args[1]
 
-            # 确保我们有所有需要的参数
+            # Ensure both truck and mine are available
             if truck is None or mine is None:
                 raise ValueError(f"{method_type} requires both truck and mine arguments")
 
             # update mine queue&wait info before the order starts
-            # 使用mine对象更新环境信息
+            # Refresh environment state via the mine object
             self.update_mine(mine)
 
-            # 记录time,calls of dispatcher
+            # Track dispatcher call count and execution time
             start_time = time.time()
             result = method(*args, **kwargs)
             elapsed_time = (time.time() - start_time) * 1000
@@ -99,16 +99,16 @@ class BaseDispatcher:
 
 class TestDispatcher(BaseDispatcher):
     def give_init_order(self, truck: "Truck", mine: "Mine") -> int:
-        # 具体实现
+        # Demo implementation
         time.sleep(0.6)
         return 0
 
     def give_haul_order(self, truck: "Truck", mine: "Mine") -> int:
-        # 具体实现
+        # Demo implementation
         return 0
 
     def give_back_order(self, truck: "Truck", mine: "Mine") -> int:
-        # 具体实现
+        # Demo implementation
         return 0
 
 if __name__ == "__main__":

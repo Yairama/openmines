@@ -9,7 +9,7 @@ from openmines.src.dispatcher import BaseDispatcher
 from openmines.src.mine import Mine
 from openmines.src.truck import Truck
 
-# 导入 rl_dispatch.py 中的 preprocess_observation 函数
+# Import helper utilities from rl_dispatch.py
 from openmines.src.dispatch_algorithms.rl_dispatch import RLDispatcher
 
 class PPODispatcher(BaseDispatcher):
@@ -24,7 +24,7 @@ class PPODispatcher(BaseDispatcher):
         
     def _get_device(self):
         """
-        确定使用的设备（CUDA/CPU）
+        Determine which device to use (CUDA or CPU).
         """
         if torch.cuda.is_available():
             return torch.device("cuda")
@@ -77,9 +77,9 @@ class PPODispatcher(BaseDispatcher):
         current_observation_raw = self._get_raw_observation(truck, mine)
         processed_obs = torch.FloatTensor(
             preprocess_observation(current_observation_raw, self.max_sim_time)
-        ).to(self.device)  # 确保输入数据在正确的设备上
+        ).to(self.device)  # Ensure the input tensor is on the right device
         
-        with torch.no_grad():  # 推理时不需要梯度
+        with torch.no_grad():  # Gradients are unnecessary during inference
             action, logprob, _, value, _ = self.agent.get_action_and_value(
                 processed_obs, sug_action=None
             )        
@@ -88,7 +88,7 @@ class PPODispatcher(BaseDispatcher):
 
     def _get_raw_observation(self, truck: Truck, mine: Mine):
         """
-        获取原始的、未经预处理的观察值，直接复用 RLDispatcher 中的 _get_observation 方法
+        Retrieve the raw observation by reusing RLDispatcher._get_observation.
         """
         return self.rl_dispatcher_helper._get_observation(truck, mine)
 

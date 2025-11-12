@@ -1,5 +1,5 @@
 from __future__ import annotations
-import numpy as np  # 导入NumPy库
+import numpy as np  # Import NumPy for numeric operations
 import random, json, time
 import openai
 
@@ -10,13 +10,13 @@ from openmines.src.dump_site import DumpSite, Dumper
 
 def serialize_distances_compact(l2d_road_matrix, d2l_road_matrix, charging_to_load):
     """
-    序列化路网距离信息，包含三个主要距离矩阵：
-    - 从充电区到装载区的距离列表
-    - 从装载区到卸载区的距离矩阵 (l2d_road_matrix[i][j]表示从装载点i到卸载点j的距离)
-    - 从卸载区到装载区的距离矩阵 (d2l_road_matrix[i][j]表示从卸载点j到装载点i的距离)
-    注意：
-    - l2d_road_matrix: [装载点索引][卸载点索引]
-    - d2l_road_matrix: [装载点索引][卸载点索引] (其中[i][j]表示从卸载点j到装载点i的距离)
+    Serialize the mine-road distance information, including three matrices:
+    - Distances from the charging area to each load site
+    - Distances from each load site to each dump site (l2d_road_matrix[i][j] gives distance from load i to dump j)
+    - Distances from each dump site back to each load site (d2l_road_matrix[i][j] gives distance from dump j to load i)
+    Notes:
+    - l2d_road_matrix: indexed by [load_site_index][dump_site_index]
+    - d2l_road_matrix: indexed by [load_site_index][dump_site_index] where entry [i][j] is the distance from dump j back to load i
     """
     # 简洁序列化充电区到装载区
     charging_to_load_text = ", ".join(f"{dist:.2f}" for dist in charging_to_load)
@@ -52,29 +52,29 @@ class PureLLMDispatcher(BaseDispatcher):
         self.haul_order_history = []
         self.back_order_history = []
         self.order_history = []
-        self.np_random = np.random.RandomState()  # 创建NumPy的随机状态对象
+        self.np_random = np.random.RandomState()  # Dedicated NumPy PRNG for reproducible sampling
 
     def give_init_order(self, truck: "Truck", mine: "Mine") -> int:
         # logger
         self.logger = mine.global_logger.get_logger("PureLLMDispatcher")
         cur_location = mine.charging_site.name
-        # 统计loadsite信息
+        # Collect load-site information
         load_sites = mine.load_sites
         loadsite_queue_length = [load_site.parking_lot.queue_status["total"][int(mine.env.now)] for load_site in
                                  load_sites]
         estimated_loadsite_queue_wait_times = [load_site.estimated_queue_wait_time for load_site in load_sites]
 
-        # 获取dumpsite信息
+        # Collect dump-site information
         avaliable_dumpsites = [dumpsite for dumpsite in mine.dump_sites if dumpsite.parking_lot is not None]
         dump_site_names = [dumpsite.name for dumpsite in avaliable_dumpsites]
         dumpsite_queue_length = [dumpsite.parking_lot.queue_status["total"][int(mine.env.now)] for dumpsite in
                                  avaliable_dumpsites]
         estimated_dumpsite_queue_wait_times = [dumpsite.estimated_queue_wait_time for dumpsite in avaliable_dumpsites]
 
-        # 获取过去的订单信息
+        # Pull recent order history for additional context
         past_orders_all = self.order_history[-10:]
         past_orders_haul = [order for order in self.order_history if order["order_type"] == "haul_order"][-10:]
-        # 获取Road距离信息
+        # Gather road distance information
         l2d_road_matrix = mine.road.l2d_road_matrix
         d2l_road_matrix = mine.road.d2l_road_matrix
         charging_to_load = mine.road.charging_to_load
@@ -128,10 +128,10 @@ class PureLLMDispatcher(BaseDispatcher):
         for i in range(3):
             try:
                 response = self.OPENAI.get_response(prompt=prompt)
-                self.logger.info(f"LLM 订单{self.order_index + 1}：prompt:{prompt} \n {response}")
+                self.logger.info(f"LLM order {self.order_index + 1}: prompt:{prompt} \n {response}")
                 start = response.find('{')
                 end = response.rfind('}') + 1
-                # 提取 JSON 字符串
+                # Extract the JSON segment from the response
                 json_str = response[start:end]
                 data = json.loads(json_str)
                 loadsite_index = data["loadingsite_index"]
@@ -140,9 +140,9 @@ class PureLLMDispatcher(BaseDispatcher):
             except Exception as e:
                 print(e)
                 loadsite_index = random.randint(0, len(mine.load_sites) - 1)
-                self.logger.error(f"LLM 订单{self.order_index + 1}：parse error，giving random order")
+                self.logger.error(f"LLM order {self.order_index + 1}: parse error, using random assignment")
 
-        # logging
+        # Record the order for auditing
         order = {
             "cur_time": mine.env.now,
             "order_type": "init_order",
@@ -156,37 +156,37 @@ class PureLLMDispatcher(BaseDispatcher):
         self.order_history.append(order)
         self.order_index += 1
         self.init_order_index += 1
-        self.logger.debug(f"LLM INIT 订单{self.init_order_index}：{order}")
+        self.logger.debug(f"LLM INIT order {self.init_order_index}: {order}")
         return loadsite_index
 
     def give_haul_order(self, truck: "Truck", mine: "Mine") -> int:
         # logger
         self.logger = mine.global_logger.get_logger("PureLLMDispatcher")
-        # 获取当前卡车信息
+        # Obtain basic truck information
         truck_load = truck.truck_load
         cur_location = truck.current_location.name
         cur_loadsite = mine.get_dest_obj_by_name(cur_location)
         cur_loadsite_index = mine.load_sites.index(cur_loadsite)
         assert isinstance(cur_loadsite,
                           LoadSite), f"the truck {truck.name} is not in a loadsite, it is in {cur_loadsite.name}"
-        # 统计loadsite信息
+        # Collect load-site information
         load_sites = mine.load_sites
         loadsite_queue_length = [load_site.parking_lot.queue_status["total"][int(mine.env.now)] for load_site in
                                  load_sites]
         estimated_loadsite_queue_wait_times = [load_site.estimated_queue_wait_time for load_site in load_sites]
 
-        # 获取dumpsite信息
+        # Collect dump-site information
         avaliable_dumpsites = [dumpsite for dumpsite in mine.dump_sites if dumpsite.parking_lot is not None]
         dump_site_names = [dumpsite.name for dumpsite in avaliable_dumpsites]
         dumpsite_queue_length = [dumpsite.parking_lot.queue_status["total"][int(mine.env.now)] for dumpsite in
                                  avaliable_dumpsites]
         estimated_dumpsite_queue_wait_times = [dumpsite.estimated_queue_wait_time for dumpsite in avaliable_dumpsites]
 
-        # 获取过去的订单信息
+        # Collect relevant historical orders
         # past_orders_all = self.order_history[-10:]
         past_orders_haul = [order for order in self.order_history if
                             order["order_type"] in ["back_order", "haul_order"]][-20:]
-        # 获取Road距离信息
+        # Gather road distance information
         l2d_road_matrix = mine.road.l2d_road_matrix
         d2l_road_matrix = mine.road.d2l_road_matrix
         charging_to_load = mine.road.charging_to_load
@@ -246,10 +246,10 @@ class PureLLMDispatcher(BaseDispatcher):
         for i in range(3):
             try:
                 response = self.OPENAI.get_response(prompt)
-                self.logger.info(f"LLM 订单{self.order_index + 1}：prompt:{prompt} \n {response}")
+                self.logger.info(f"LLM order {self.order_index + 1}: prompt:{prompt} \n {response}")
                 start = response.find('{')
                 end = response.rfind('}') + 1
-                # 提取 JSON 字符串
+                # Extract the JSON payload
                 json_str = response[start:end]
                 data = json.loads(json_str)
                 dumpsite_index = data["dumpsite_index"]
@@ -258,9 +258,9 @@ class PureLLMDispatcher(BaseDispatcher):
             except Exception as e:
                 print(e)
                 dumpsite_index = random.randint(0, len(avaliable_dumpsites) - 1)
-                self.logger.error(f"LLM 订单{self.order_index + 1}：parse error，giving random order")
+                self.logger.error(f"LLM order {self.order_index + 1}: parse error, using random assignment")
 
-        # logging
+        # Record the order for auditing
         order = {
             "cur_time": mine.env.now,
             "order_type": "haul_order",
@@ -274,13 +274,13 @@ class PureLLMDispatcher(BaseDispatcher):
         self.haul_order_history.append(order)
         self.order_history.append(order)
         self.order_index += 1
-        self.logger.debug(f"LLM HAUL 订单{self.order_index}：{order}")
+        self.logger.debug(f"LLM HAUL order {self.order_index}: {order}")
         return dumpsite_index
 
     def give_back_order(self, truck: "Truck", mine: "Mine") -> int:
         # logger
         self.logger = mine.global_logger.get_logger("PureLLMDispatcher")
-        # 获取当前卡车信息
+        # Obtain the truck's current information
         truck_load = truck.truck_load
         cur_location = truck.current_location.name
         cur_dumpsite = mine.get_dest_obj_by_name(cur_location)
@@ -288,25 +288,25 @@ class PureLLMDispatcher(BaseDispatcher):
         assert isinstance(cur_dumpsite,
                           DumpSite), f"the truck {truck.name} is not in a dumpsite, it is in {cur_dumpsite.name}"
 
-        # 统计dumpsite信息
+        # Collect dump-site information
         dump_sites = mine.dump_sites
         dumpsite_queue_length = [dump_site.parking_lot.queue_status["total"][int(mine.env.now)] for dump_site in
                                  dump_sites]
         estimated_dumpsite_queue_wait_times = [dump_site.estimated_queue_wait_time for dump_site in dump_sites]
 
-        # 获取loadsite信息
+        # Collect load-site information
         avaliable_loadsites = [loadsite for loadsite in mine.load_sites if loadsite.parking_lot is not None]
         load_site_names = [loadsite.name for loadsite in avaliable_loadsites]
         loadsite_queue_length = [loadsite.parking_lot.queue_status["total"][int(mine.env.now)] for loadsite in
                                  avaliable_loadsites]
         estimated_loadsite_queue_wait_times = [loadsite.estimated_queue_wait_time for loadsite in avaliable_loadsites]
 
-        # 获取Road距离信息
+        # Gather road distance information
         l2d_road_matrix = mine.road.l2d_road_matrix
         d2l_road_matrix = mine.road.d2l_road_matrix
         charging_to_load = mine.road.charging_to_load
 
-        # 历史
+        # Relevant historical orders
         past_orders_back = [order for order in self.order_history if
                             order["order_type"] in ["back_order", "haul_order"]][-20:]
 

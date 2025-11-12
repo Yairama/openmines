@@ -76,7 +76,7 @@ class FixedGroupDispatcher(BaseDispatcher):
 
     def give_haul_order(self, truck: "Truck", mine: "Mine") -> int:
         """
-        前往最近距离的卸载点卸载
+        Send the truck to the closest dump site for unloading.
         :param truck:
         :param mine:
         :return:
@@ -95,7 +95,7 @@ class FixedGroupDispatcher(BaseDispatcher):
 
     def give_back_order(self, truck: "Truck", mine: "Mine") -> int:
         """
-        查询当前车辆所在的装载点并返回
+        Look up the load site associated with this truck and send it back there.
         :param truck:
         :param mine:
         :return:
@@ -121,7 +121,7 @@ if __name__ == "__main__":
 
     config = load_config(config_file)
     mine = Mine(config_file)
-    # 初始化充电站和卡车
+    # Initialize charging site and trucks
     charging_site = ChargingSite(config['charging_site']['name'], position=config['charging_site']['position'])
     for truck_config in config['charging_site']['trucks']:
         for _ in range(truck_config['count']):
@@ -132,7 +132,7 @@ if __name__ == "__main__":
             )
             charging_site.add_truck(truck)
 
-    # 初始化装载点和铲车
+    # Initialize load sites and shovels
     for load_site_config in config['load_sites']:
         load_site = LoadSite(name=load_site_config['name'], position=load_site_config['position'])
         for shovel_config in load_site_config['shovels']:
@@ -147,13 +147,13 @@ if __name__ == "__main__":
                                  name=load_site_config['parkinglot']['name'])
         mine.add_load_site(load_site)
 
-    # 初始化卸载点和卸载机
+    # Initialize dump sites and dumpers
     for dump_site_config in config['dump_sites']:
         dump_site = DumpSite(dump_site_config['name'], position=dump_site_config['position'])
         for dumper_config in dump_site_config['dumpers']:
             for _ in range(dumper_config['count']):
                 dumper = Dumper(
-                    name=f"{dump_site_config['name']}-点位{_}",
+                    name=f"{dump_site_config['name']}-spot{_}",
                     dumper_cycle_time=dumper_config['cycle_time'],
                     position_offset=dumper_config['position_offset']
                 )
@@ -162,19 +162,19 @@ if __name__ == "__main__":
                                  name=dump_site_config['parkinglot']['name'])
         mine.add_dump_site(dump_site)
 
-    # 初始化道路
+    # Initialize the road network
     l2d_road_matrix = np.array(config['road']['l2d_road_matrix'])
     d2l_road_matrix = np.array(config['road']['d2l_road_matrix'])
-    road_event_params = config['road'].get('road_event_params', {})  # 从配置中加载道路事件参数
+    road_event_params = config['road'].get('road_event_params', {})  # Load road event parameters from the config
 
     charging_to_load_road_matrix = config['road']['charging_to_load_road_matrix']
     road = Road(l2d_road_matrix=l2d_road_matrix, d2l_road_matrix=d2l_road_matrix, 
                 charging_to_load_road_matrix=charging_to_load_road_matrix,
                 road_event_params=road_event_params)
-    # # 添加充电站和装载区卸载区
+    # Add the charging site along with load and dump areas
     mine.add_road(road)
     mine.add_charging_site(charging_site)
-    ## 添加调度
+    # Register the dispatcher
     mine.add_dispatcher(dispatcher)
     dispatcher.compute_solution(mine)
     print(dispatcher.group_solution)
