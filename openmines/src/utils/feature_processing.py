@@ -1,11 +1,11 @@
 import numpy as np
 
 def preprocess_observation(observation, max_sim_time):
-    """特征预处理逻辑"""
+    """Feature preprocessing logic for RL observations."""
     """
-    0.订单信息
+    0. Order information
     """
-    # 1.订单类型,时间信息
+    # 1. Order type and timing information
     event_name = observation['event_name']
     if event_name == "init":
         event_type = [1, 0, 0]
@@ -16,20 +16,20 @@ def preprocess_observation(observation, max_sim_time):
     else:
         event_type = [0, 0, 1]
         action_space_n = observation['info']['load_num']
-    # 2.当前订单时间绝对位置和相对位置
-    time_delta = float(observation['info']['delta_time'])  # 距离上次调度的时间
-    time_now = float(observation['info']['time']) / max_sim_time  # 当前时间(正则化）
-    time_left = 1 - time_now  # 距离结束时间
+    # 2. Absolute and relative positions of the current order time
+    time_delta = float(observation['info']['delta_time'])  # Time elapsed since the last dispatch
+    time_now = float(observation['info']['time']) / max_sim_time  # Current time (normalized)
+    time_left = 1 - time_now  # Remaining normalized time
     order_state = np.array([event_type[0], event_type[1], event_type[2], time_delta, time_now, time_left])
 
     """
-    1.车辆自身信息
+    1. Vehicle-specific information
     """
-    # 矿山总卡车数目（用于正则化）
+    # Total number of trucks in the mine (used for normalization)
     truck_num = observation['mine_status']['truck_count']
-    # 4.车辆当前位置One-hot编码
+    # 4. One-hot encoding of the truck's current location
     truck_location_onehot = np.array(observation["the_truck_status"]["truck_location_onehot"])
-    # 车辆装载量，车辆循环时间（正则化）
+    # Truck load and cycle time features (log-normalized)
     truck_features = np.array([
         np.log(observation['the_truck_status']['truck_load'] + 1),
         np.log(observation['the_truck_status']['truck_cycle_time'] + 1),
@@ -37,32 +37,32 @@ def preprocess_observation(observation, max_sim_time):
     truck_self_state = np.concatenate([truck_location_onehot, truck_features])
 
     """
-    2.道路相关信息
+    2. Road-related information
     """
-    # 车预期行驶时间
+    # Expected travel times
     travel_time = np.array(observation['cur_road_status']['distances']) * 60 / 25
-    # 道路上卡车数量
+    # Number of trucks on each road segment
     truck_counts = np.array(observation['cur_road_status']['truck_counts']) / (truck_num + 1e-8)
-    # 道路距离信息
+    # Road distance features
     road_dist = np.array(observation['cur_road_status']['oh_distances'])
-    # 道路拥堵信息
+    # Road congestion indicators
     road_jam = np.array(observation['cur_road_status']['oh_truck_jam_count'])
 
     road_states = np.concatenate([travel_time, truck_counts, road_dist, road_jam])
 
     """
-    3.目标点相关信息
+    3. Target-site information
     """
-    # 预期等待时间
-    est_wait = np.log(observation['target_status']['single_est_wait'] + 1)  # 包含了路上汽车+队列汽车的目标装载点等待时间
-    tar_wait_time = np.log(np.array(observation['target_status']['est_wait']) + 1)  # 不包含路上汽车
-    # 队列长度（正则化）
+    # Expected waiting times
+    est_wait = np.log(observation['target_status']['single_est_wait'] + 1)  # Includes on-road trucks and queued trucks for the target load site
+    tar_wait_time = np.log(np.array(observation['target_status']['est_wait']) + 1)  # Excludes trucks currently on the road
+    # Normalized queue lengths
     queue_lens = np.array(observation['target_status']['queue_lengths']) / (truck_num + 1e-8)
-    # 装载量
+    # Load capacities
     tar_capa = np.log(np.array(observation['target_status']['capacities']) + 1)
-    # 各个目标点当前的产能系数(维护导致的产能下降）
+    # Current productivity ratio for each target (maintenance may reduce capacity)
     ability_ratio = np.array(observation['target_status']['service_ratio'])
-    # 已经生产的矿石量（正则化）
+    # Cumulative produced tonnage (log-normalized)
     produced_tons = np.log(np.array(observation['target_status']['produced_tons']) + 1)
 
     tar_state = np.concatenate([est_wait, tar_wait_time, queue_lens, tar_capa, ability_ratio, produced_tons])

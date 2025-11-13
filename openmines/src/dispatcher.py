@@ -1,6 +1,6 @@
 from __future__ import annotations
 import time
-
+from mine import Mine
 class BaseDispatcher:
     def __init__(self):
         self.init_orders = []
@@ -21,7 +21,7 @@ class BaseDispatcher:
             return self._track_calls_and_time_wrapper(attr, name)
         return attr
 
-    def update_mine(self, mine: "Mine"):
+    def update_mine(self, mine: Mine):
         # loadsite update
         for load_site in mine.load_sites:
             load_site.update_service_time()

@@ -25,7 +25,7 @@ class Event:
 
 class EventPool:
     """
-    用来存储卡车运行事件的类，便于后期统计分析
+    Container for truck operation events to simplify downstream analysis.
     """
 
     def __init__(self):
@@ -43,15 +43,13 @@ class EventPool:
 
     def get_even_by_type(self, name: str) -> list:
         """
-        通过事件type获取事件
+        Retrieve events by their type name.
         """
         return self.events_by_type.get(name, [])
 
     def get_even_by_desc(self, name: str) -> list:
         """
-        通过事件desc获取事件
-        :param name:
-        :return:
+        Retrieve events whose description contains the given text.
         """
         list_event = []
         for t in sorted(self.event_set.keys()):
@@ -61,9 +59,10 @@ class EventPool:
 
     def get_event_by_time(self, time: float, mode="backward") -> list:
         """
-        给定一个时间，获取当前时间之前的顺序的event列表
-        :param time:
-        :return:
+        Return events ordered by time relative to the provided timestamp.
+
+        If mode is "backward" (default) the result includes events at or before
+        the timestamp. Any other mode returns events strictly after the timestamp.
         """
         if mode == "backward":
             list_event = []
@@ -80,9 +79,7 @@ class EventPool:
 
     def get_event_by_time_range(self, start_time: float, end_time: float) -> list:
         """
-        给定一个时间范围，获取当前时间之前的顺序的event列表
-        :param time:
-        :return:
+        Return events whose timestamps fall within the inclusive range.
         """
         list_event = []
         for t in sorted(self.event_set.keys()):
@@ -92,16 +89,11 @@ class EventPool:
 
     def update_last_info(self, type: str, info: dict, strict: bool = True):
         """
-        更新最后一个事件的info
-        如果strict为True，则
-            断言这个事件的type是给定type
-        如果strict为False，则
-            更新最近的匹配到的event的info
+        Update the info payload of the most recent matching event.
 
-        :param type:
-        :param info:
-        :param strict:
-        :return:
+        When strict=True the most recent event must match the requested type.
+        When strict=False the search walks backward until it finds a matching
+        event and updates that entry.
         """
         if strict:
             assert self.event_set[list(self.event_set.keys())[-1]].event_type == type
@@ -114,11 +106,10 @@ class EventPool:
 
     def get_last_event(self, type: str, strict: bool = True):
         """
-        获取最后一个事件
-        如果strict为True，则
-            断言这个事件的type是给定type
-        如果strict为False，则
-            更新最近的匹配到的event的info
+        Return the most recent event, honoring the strictness rules from above.
+
+        Strict mode requires the latest event to match the requested type.
+        Non-strict mode scans backward until it finds the first matching event.
         """
         if strict:
             assert self.event_set[list(self.event_set.keys())[-1]].event_type == type
@@ -135,8 +126,10 @@ class EventPool:
 
 class RandomEventPool:
     """
-    1.用来记录在模拟运行过程中的随机事件以供后期分析
-    2.在算法派车决策时，提供现有的随机事件
+    Placeholder for random events captured during simulation.
+
+    Intended both for retrospective analysis and as input to dispatch
+    decisions while the simulation is running.
     """
     pass
 

@@ -2,7 +2,7 @@ from openmines.src.utils.gym.openmines_gym.envs.mine_env import *
 from gymnasium.envs.registration import register
  
 
-# 也可以添加一个显式的注册函数
+# Optional explicit registration helper
 def register_envs():
     register(
         id='Mine-v0',

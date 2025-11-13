@@ -1,4 +1,4 @@
-# 导入必要的库
+# Import required libraries
 import os
 import sys
 import time
@@ -16,17 +16,17 @@ import json
 import argparse
 from datetime import datetime
 
-# 禁用警告以加快执行速度
+# Silence warnings to speed execution
 import warnings
 warnings.filterwarnings('ignore')
 
-# 导入您的环境
+# Import the custom environment
 from openmines.src.utils.rl_env import MineEnv
 
-# 超参数定义
+# Hyperparameter definitions
 GAMMA = 0.99
-# 在超参数定义区域添加
-GAE_LAMBDA = 0.95  # GAE lambda参数
+# Added alongside the other hyperparameters
+GAE_LAMBDA = 0.95  # Generalized Advantage Estimation lambda
 
 CLIP_EPSILON = 0.2
 CRITIC_DISCOUNT = 0.5
@@ -40,17 +40,17 @@ NUM_PROCESSES = 7
 NUM_UPDATES = 1000
 MAX_GRAD_NORM = 0.5
 
-# 生成唯一运行标识符的函数
+# Generate a unique run identifier
 def generate_run_id():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     random_string = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
     return f"{timestamp}_{random_string}"
 
-# 生成唯一颜色的函数
+# Generate a unique color for plotting
 def generate_run_color():
     return "#{:06x}".format(random.randint(0, 0xFFFFFF))
 
-# 定义具有独立Actor和Critic网络的神经网络模型
+# Actor-Critic network with independent actor and critic branches
 class ActorCritic(nn.Module):
     def __init__(self, state_dim, action_dims):
         super(ActorCritic, self).__init__()
@@ -77,11 +77,11 @@ class ActorCritic(nn.Module):
     def act(self, state, event_type, action=None):
         encoded_state = self.actor_encoder(state)
         action_logits = self.actor_heads[event_type](encoded_state)
-        # action_probs = nn.functional.softmax(action_logits, dim=-1)  # 由于Categorical分布会自动进行softmax，因此不需要手动进行
+        # action_probs = nn.functional.softmax(action_logits, dim=-1)  # Categorical handles softmax internally
         assert torch.isfinite(action_logits).all(), f"NaN detected in action_logits: {action_logits}"
         dist = Categorical(action_logits)
         if action is None:
-            # 如果没有指定动作，则从分布中采样
+            # Sample from the policy when no action is provided
             action = dist.sample()
         value = self.critic(state)
         return action, dist.log_prob(action), dist.entropy(), value, dist  #  action_probs
@@ -118,7 +118,7 @@ class Memory:
         self.event_types = []
         self.action_probs = []
         self.total_production = 0
-        self.next_value = None  # 添加next_value属性
+        self.next_value = None  # Track the next-state value for GAE
 
     def clear_memory(self):
         del self.states[:]
@@ -133,12 +133,12 @@ class Memory:
         self.next_value = None
 
     def compute_gae(self):
-        # 转换为tensor以提高效率
+        # Convert to tensors for efficiency
         values_tensor = torch.tensor(self.values + [self.next_value])
         rewards_tensor = torch.tensor(self.rewards)
         masks = torch.tensor([not done for done in self.is_terminals])
 
-        # 预分配advantages数组
+        # Pre-allocate the advantage array
         advantages = torch.zeros_like(rewards_tensor)
         lastgaelam = 0
 
@@ -158,11 +158,11 @@ class Memory:
         log_probs = torch.stack(self.log_probs)
         values = torch.stack(self.values).squeeze(-1)
 
-        # 使用GAE计算returns和advantages
+        # Derive returns and advantages via GAE
         returns = torch.tensor(self.compute_gae())
         advantages = returns - values
 
-        # 标准化优势
+        # Normalize advantages if requested
         if args.norm_adv:
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
         #advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
@@ -172,7 +172,7 @@ class Memory:
 
         return states, actions, log_probs, returns, advantages, event_types, action_probs
 
-# PPO算法，具有独立的Actor和Critic优化器
+# PPO algorithm with independent actor and critic optimizers
 class PPO:
     def __init__(self, state_dim, action_dims, device):
         self.device = device
@@ -210,7 +210,7 @@ class PPO:
         all_event_types = torch.stack(all_event_types).to(self.device)
         all_action_probs = torch.stack(all_action_probs).to(self.device)
 
-        # 标准化优势函数，提高训练稳定性
+        # Normalize advantages to stabilize training
         all_advantages = (all_advantages - all_advantages.mean()) / (all_advantages.std() + 1e-8)
 
         for _ in range(PPO_EPOCHS):
@@ -233,13 +233,13 @@ class PPO:
                 critic_loss = nn.MSELoss()(state_values.squeeze(-1), returns)
                 entropy_loss = dist_entropy.mean()
 
-                # 更新Actor
+                # Update actor network parameters
                 self.actor_optimizer.zero_grad()
                 (actor_loss - ENTROPY_BETA * entropy_loss).backward()
                 nn.utils.clip_grad_norm_(self.policy.actor_parameters(), MAX_GRAD_NORM)
                 self.actor_optimizer.step()
 
-                # 更新Critic
+                # Update critic network parameters
                 self.critic_optimizer.zero_grad()
                 critic_loss.backward()
                 nn.utils.clip_grad_norm_(self.policy.critic_parameters(), MAX_GRAD_NORM)
@@ -258,7 +258,7 @@ class PPO:
 
         return avg_action_probs
 
-# 特征预处理函数
+# Feature preprocessing helper
 def preprocess_features(observation):
     time_delta = float(observation['info']['delta_time'])
     time_now = float(observation['info']['time'])
@@ -310,7 +310,7 @@ def preprocess_features(observation):
 
     return state, event_type_index
 
-# 收集轨迹的工作进程函数（修改了奖励的处理）
+# Worker process that collects trajectories without reward scaling
 def collect_trajectory(env_config, policy, device, process_id, trajectory_queue):
     env = MineEnv.make(env_config, log=False, ticks=False)
     memory = Memory()
@@ -326,11 +326,11 @@ def collect_trajectory(env_config, policy, device, process_id, trajectory_queue)
         observation, reward, done, truncated, _ = env.step(action.item())
         next_state, next_event_type = preprocess_features(observation)
 
-        # 不对奖励进行缩放
+        # Do not rescale rewards
         memory.states.append(state_tensor.detach().cpu())
         memory.actions.append(action.detach().cpu())
         memory.log_probs.append(log_prob.detach().cpu())
-        memory.rewards.append(reward)  # 保留原始奖励
+        memory.rewards.append(reward)  # Keep original reward values
         memory.is_terminals.append(done)
         memory.values.append(value.detach().cpu())
         memory.event_types.append(event_type)
@@ -341,11 +341,11 @@ def collect_trajectory(env_config, policy, device, process_id, trajectory_queue)
 
         state = next_state
         event_type = next_event_type
-        episode_reward += reward  # 累积奖励
+        episode_reward += reward  # Accumulate reward
 
-    memory.total_production = observation['info']['produce_tons']  # 记录总产量
+    memory.total_production = observation['info']['produce_tons']  # Record total production
 
-    # 如果未结束，使用最后的价值估计作为下一个价值
+    # If the episode continues, reuse the last value estimate as the bootstrap target
     with torch.no_grad():
         next_state_tensor = torch.FloatTensor(next_state).to(device)
         _, _, _, next_value, _ = policy.act(next_state_tensor, next_event_type)
@@ -354,7 +354,7 @@ def collect_trajectory(env_config, policy, device, process_id, trajectory_queue)
     trajectory_queue.put((memory, episode_reward, step + 1))
     env.close()
 
-# 主函数
+# Main entry point
 def main(args):
     run_id = generate_run_id()
     run_color = generate_run_color()
@@ -362,7 +362,7 @@ def main(args):
     log_dir = os.path.join("runs", run_id)
     os.makedirs(log_dir, exist_ok=True)
 
-    # 保存运行配置
+    # Persist run configuration
     config = {
         "run_id": run_id,
         "run_color": run_color,
@@ -386,9 +386,9 @@ def main(args):
     state, _ = preprocess_features(observation)
     state_dim = len(state)
     action_dims = [
-        observation['info']['load_num'],  # 对于 init
-        observation['info']['unload_num'],  # 对于 haul
-        observation['info']['load_num']  # 对于 unhaul
+        observation['info']['load_num'],  # For init
+        observation['info']['unload_num'],  # For haul
+        observation['info']['load_num']  # For unhaul
     ]
     env.close()
 
@@ -403,7 +403,7 @@ def main(args):
 
     total_progress = tqdm(total=args.num_updates, desc=f'Training Progress (Run ID: {run_id})')
 
-    # 创建动作的颜色（可选）
+    # Optionally create per-action colors for visualization
     action_colors = [
         [f'#{random.randint(0, 0xFFFFFF):06x}' for _ in range(dim)]
         for dim in action_dims
@@ -452,7 +452,7 @@ def main(args):
         avg_reward = sum(episode_rewards) / args.num_processes
         avg_length = sum(episode_lengths) / args.num_processes
 
-        # 计算此更新的总产量
+        # Calculate total production for this update
         update_production = sum(episode_productions) / args.num_processes
         production_increase = update_production - total_production
         total_production = update_production
@@ -462,7 +462,7 @@ def main(args):
         writer.add_scalar('Total Production', total_production, update)
         writer.add_scalar('Production Increase', production_increase, update)
 
-        # 记录平均动作概率
+        # Log average action probabilities
         for event_type, probs, colors in zip(event_types, avg_action_probs, action_colors):
             action_prob_dict = {f'Action {i}': prob for i, prob in enumerate(probs)}
             writer.add_scalars(f'Avg Action Probabilities/{event_type}', action_prob_dict, update)
@@ -475,7 +475,7 @@ def main(args):
     print(f"\nTraining completed. Run ID: {run_id}, Color: {run_color}")
     print(f"Final Total Production: {total_production}")
 
-    # 保存最终模型
+    # Save the trained model
     torch.save(ppo_agent.policy.state_dict(), os.path.join(log_dir, "final_model.pth"))
 
 if __name__ == '__main__':

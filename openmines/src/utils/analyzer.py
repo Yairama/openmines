@@ -22,14 +22,14 @@ class LogAnalyzer:
         self.summaries = []
         self.console = Console()
         
-        # 初始化API客户端（支持新旧两种方式）
+        # Initialize API client (supports both the new and legacy SDKs)
         try:
-            # 尝试新版API
+            # Attempt to use the modern OpenAI client
             from openai import OpenAI
             self.client = OpenAI(api_key=api_key, base_url=api_base)
             self.api_version = "new"
         except ImportError:
-            # 回退到旧版API
+            # Fall back to the legacy openai package
             import openai
             openai.api_key = api_key
             openai.api_base = "https://api.siliconflow.cn"
@@ -37,12 +37,12 @@ class LogAnalyzer:
             self.api_version = "old"
 
     def extract_time(self, log_line):
-        """使用正则表达式提取时间信息"""
+        """Extract the timestamp from a log line via regex."""
         time_match = re.search(r"Time:<([\d.]+)>", log_line)
         return float(time_match.group(1)) if time_match else None
 
     def categorize_logs(self, log_path):
-        """将日志按时间区间分类"""
+        """Group log entries into predefined time intervals."""
         categorized = {interval[2]: [] for interval in self.time_intervals}
         
         with open(log_path, "r", encoding="utf-8") as f:
@@ -66,7 +66,7 @@ class LogAnalyzer:
                         temperature=0.3,
                         stream=True  # Enable streaming output
                     )
-                    # 处理流式响应
+                    # Handle streamed responses
                     collected_content = ""
                     self.console.print("[cyan]Generating analysis...[/cyan]")
                     for chunk in response:
@@ -74,19 +74,19 @@ class LogAnalyzer:
                             content = chunk.choices[0].delta.content
                             if content:
                                 collected_content += content
-                                # 打印内容
+                                # Print incremental content for real-time feedback
                                 self.console.print(content, end="")
                     self.console.print("\n")
                     return collected_content
                 else:
-                    # 旧版API的流式处理
+                    # Streaming response handling for the legacy API
                     response = self.client.ChatCompletion.create(
                         model=self.model_name,
                         messages=[{"role": "user", "content": prompt}],
                         temperature=0.3,
                         stream=True  # Enable streaming output
                     )
-                    # 处理流式响应
+                    # Handle streamed responses
                     collected_content = ""
                     self.console.print("[cyan]Generating analysis...[/cyan]")
                     for chunk in response:
@@ -95,7 +95,7 @@ class LogAnalyzer:
                                 content = chunk.choices[0].delta.content
                                 if content:
                                     collected_content += content
-                                    # 打印内容
+                                    # Print incremental content for real-time feedback
                                     self.console.print(content, end="")
                     self.console.print("\n")
                     return collected_content
@@ -106,15 +106,15 @@ class LogAnalyzer:
         return "Analysis failed"
 
     def get_dispatcher_code(self, algo_name):
-        """通过模块遍历获取调度算法源代码"""
+        """Retrieve dispatcher source code by scanning the package."""
         try:
-            # 遍历所有dispatch_algorithms模块
+            # Walk every module registered under dispatch_algorithms
             dispatchers_package = 'openmines.src.dispatch_algorithms'
             package = import_module(dispatchers_package)
             
             for _, module_name, _ in pkgutil.iter_modules(package.__path__):
                 module = import_module(f"{dispatchers_package}.{module_name}")
-                # 查找匹配的类
+                # Look for the matching class definition
                 for name, obj in inspect.getmembers(module):
                     if inspect.isclass(obj) and name == algo_name:
                         return inspect.getsource(obj)
@@ -127,7 +127,7 @@ class LogAnalyzer:
         self.console.print("[bold blue]Starting log file analysis...[/bold blue]")
         import pathlib
         
-        # 处理日志路径
+        # Normalize the log path and locate the newest log file if a directory is provided
         path = pathlib.Path(log_path)
         if path.is_dir():
             log_files = list(path.glob("*.log"))
@@ -140,12 +140,12 @@ class LogAnalyzer:
         
         dispatcher_sections = self.identify_dispatcher_sections(log_path)
         
-        # 打印段落信息
+        # Display dispatcher sections discovered in the log
         self.console.print("\n[bold cyan]Identified dispatcher algorithm sections:[/bold cyan]")
         for section in dispatcher_sections:
             self.console.print(f"• {section['name']}: Lines {section['start_line']}-{section['end_line']}")
 
-        # 选择要分析的段落
+        # Determine which sections should be analyzed
         if hasattr(self, 'dispatcher_name') and self.dispatcher_name:
             selected_sections = [s for s in dispatcher_sections if s['name'] == self.dispatcher_name]
             if not selected_sections:
@@ -160,7 +160,7 @@ class LogAnalyzer:
             else:
                 selected_sections = dispatcher_sections
 
-        # 分析选中的段落
+        # Analyze each chosen section sequentially
         final_report = ""
         for section in selected_sections:
             self.console.print(f"\n[bold magenta]Analyzing {section['name']} section...[/bold magenta]")
@@ -170,16 +170,16 @@ class LogAnalyzer:
         return final_report
 
     def identify_dispatcher_sections(self, log_path):
-        """识别日志中的调度算法段落"""
+        """Identify dispatcher-specific sections within the log file."""
         sections = []
         current_section = None
         
         with open(log_path, 'r', encoding='utf-8') as f:
             for line_num, line in enumerate(f, 1):
-                # 检测段落开始
+                # Detect the start of a dispatcher section
                 start_match = re.search(r'simulation started with dispatcher (\w+)', line)
                 if start_match:
-                    if current_section:  # 处理未正常结束的段落
+                    if current_section:  # Close a section that did not end cleanly
                         current_section['end_line'] = line_num - 1
                         sections.append(current_section)
                     current_section = {
@@ -188,7 +188,7 @@ class LogAnalyzer:
                         'end_line': None
                     }
                 
-                # 检测段落结束
+                # Detect the end of the dispatcher section
                 end_match = re.search(r'simulation finished with dispatcher (\w+)', line)
                 if end_match and current_section:
                     if end_match.group(1) == current_section['name']:
@@ -200,36 +200,36 @@ class LogAnalyzer:
 
     def analyze_section(self, log_path, section):
         """Analyze a single dispatcher algorithm section"""
-        # 提取指定行号的日志内容
+        # Extract log lines that belong to the requested section
         section_logs = []
         with open(log_path, 'r', encoding='utf-8') as f:
             for line_num, line in enumerate(f, 1):
                 if section['start_line'] <= line_num <= section['end_line']:
                     section_logs.append(line.strip())
         
-        # 临时日志文件
+        # Persist a temporary log file for downstream analysis
         temp_log = f"temp_{section['name']}.log"
         try:
             with open(temp_log, 'w', encoding='utf-8') as f:
                 f.write("\n".join(section_logs))
             
-            # 使用原有分析逻辑
+            # Reuse the existing single-log analysis routine
             self.console.print(f"\n[bold magenta]Analyzing {section['name']} section ({len(section_logs)} lines)...[/bold magenta]")
             return self._analyze_single_log(temp_log, section['name'])
         finally:
-            # 清理临时文件
+            # Clean up the temporary file
             if os.path.exists(temp_log):
                 os.remove(temp_log)
 
     def _analyze_single_log(self, log_path, algo_name):
         """Wrap original analysis logic"""
-        # 获取调度算法代码
+        # Pull the dispatcher implementation for reference
         dispatcher_code = self.get_dispatcher_code(algo_name)
         
-        # 分时间段总结
+        # Generate summaries for each configured time window
         categorized = self.categorize_logs(log_path)
         
-        self.summaries = []  # 清空之前的总结
+        self.summaries = []  # Reset any previously cached summaries
         
         for interval_name, logs in categorized.items():
             if not logs:
@@ -237,7 +237,7 @@ class LogAnalyzer:
             
             self.console.print(f"\n[bold cyan]Analyzing {interval_name} time period...[/bold cyan]")
             
-            # 构建提示词
+            # Construct the analysis prompt for this interval
             prompt = f"""
             You are now a mining truck dispatch analysis expert. You will analyze log data from a professional perspective and use data-rich language to summarize it, helping dispatchers improve their strategies.
             Dispatchers can only write necessary code and cannot add hardware facilities, so your suggestions should focus on dispatch strategies.
@@ -260,19 +260,19 @@ class LogAnalyzer:
 
             Please return the analysis report in {self.language} with concise text that directly addresses the current situation with rich data:"""
 
-            # 添加示例日志（控制长度）
-            prompt += "\n\nRelevant log segment:\n" + "\n".join(logs[:20])  # 取前20条作为示例
+            # Append a sample of log lines (trimmed for brevity)
+            prompt += "\n\nRelevant log segment:\n" + "\n".join(logs[:20])  # Limit to the first 20 entries
             
-            # 获取并存储总结
+            # Retrieve and store the interval summary
             summary = self.get_summary(prompt)
             self.summaries.append({
                 "interval": interval_name,
                 "summary": summary
             })
             self.console.print(f"[bold green]✓ Completed analysis for {interval_name}[/bold green]")
-            time.sleep(1)  # 避免速率限制
+            time.sleep(1)  # Avoid hitting API rate limits
 
-        # 阶段2：综合总结
+        # Stage 2: produce an overall consolidated summary
         self.console.print("\n[bold magenta]Generating final comprehensive report...[/bold magenta]")
         
         combined_summary = "\n\n".join(
@@ -301,7 +301,7 @@ class LogAnalyzer:
 if __name__ == "__main__":
     console = Console()
     
-    # 设置命令行参数
+    # Configure command-line arguments
     parser = argparse.ArgumentParser(description='矿山卡车调度日志分析工具')
     parser.add_argument('log_path', help='日志文件路径')
     parser.add_argument('--api-key', default="sk-whknzqhqufnsnfrjtrofqmlyuxhaobawmdtfhpuvyctaoblr",
@@ -321,7 +321,7 @@ if __name__ == "__main__":
         
         analysis_result = analyzer.analyze_logs(args.log_path)
         
-        # 保存结果
+        # Persist the analysis report
         output_file = "log_analysis_report.md"
         with open(output_file, "w", encoding="utf-8") as f:
             f.write("# 矿山卡车调度分析报告\n\n")

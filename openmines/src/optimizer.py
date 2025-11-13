@@ -28,7 +28,7 @@ class StrategyRecord:
     error_history: List[str] = None
 
 class APIError(Exception):
-    """自定义API异常"""
+    """Custom API exception."""
     pass
 
 class StrategyOptimizer:

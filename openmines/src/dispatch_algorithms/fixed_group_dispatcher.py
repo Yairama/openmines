@@ -86,7 +86,7 @@ class FixedGroupDispatcher(BaseDispatcher):
 
         current_location = truck.current_location
         if not isinstance(current_location, LoadSite):
-            raise ValueError(f"Truck {truck.name} is not at a LoadSite: {current_location.name}")
+            raise ValueError(f"Truck {truck.current_location} is not at a LoadSite: {current_location.name}")
         assert isinstance(current_location, LoadSite), f"current_location is not a LoadSite: {current_location.name}"
         cur_index = mine.load_sites.index(current_location)
         cur_to_dump = mine.road.l2d_road_matrix[cur_index, :]

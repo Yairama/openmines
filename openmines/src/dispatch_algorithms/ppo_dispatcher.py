@@ -17,7 +17,7 @@ class PPODispatcher(BaseDispatcher):
         super().__init__()
         self.name = "PPODispatcher"
         self.model_path = os.path.join(os.path.dirname(__file__), "checkpoints", "mine", "Mine-v1__ppo_single_net__s1__lr2.28e-03__e1.43e-02__g0.997__c0.20__l0.993__ep4__gr0.36__hs256__ns1400__ne50__mb4__rmreward_norm__t1740559741", "best_model_step19670000_tons10812.1_reward0.00.pt")
-        self.device = self._get_device()  # 获取可用设备
+        self.device = self._get_device()  # Determine the available compute device
         self.load_rl_model(self.model_path)
         self.rl_dispatcher_helper = RLDispatcher("NaiveDispatcher", reward_mode="dense")        
         self.max_sim_time = 240
@@ -44,10 +44,10 @@ class PPODispatcher(BaseDispatcher):
         self.agent = Agent(envs=-1, args=self.args, 
                          norm_path=os.path.join(os.path.dirname(__file__), "ppo_norm_params_dense.json"))
         
-        # 加载模型时指定设备映射
+        # Map tensors to the chosen device when loading the model
         state_dict = torch.load(model_path, map_location=self.device)
         self.agent.load_state_dict(state_dict)
-        self.agent.to(self.device)  # 确保模型在正确的设备上
+        self.agent.to(self.device)  # Ensure the model resides on the correct device
         self.agent.eval()
 
     def give_init_order(self, truck: Truck, mine: Mine) -> int:

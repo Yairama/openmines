@@ -2,11 +2,11 @@ import gymnasium as gym
 from gymnasium.wrappers import FlattenObservation
 from openmines_gym import GymMineEnv
 
-# 创建和测试环境
+# Create and smoke-test the environment
 env = GymMineEnv("../../../../conf/north_pit_mine.json")
 env = FlattenObservation(env)
 
-# 测试环境
+# Exercise a few random steps
 obs, info = env.reset()
 print("Observation shape:", obs.shape)
 
